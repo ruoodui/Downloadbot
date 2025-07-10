@@ -1,6 +1,5 @@
 import os
 import uuid
-from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
@@ -8,22 +7,20 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# Load .env
-load_dotenv()
+# ✅ إعدادات البوت
+TOKEN = "7885110649:AAG0hJFPIraXNqtQoOJvt2_8SWHwMFx3zwA"
+CHANNEL_USERNAME = "@mitech808"
+INSTAGRAM_USERNAME = "mitech808"
+ADMIN_ID = 193646746
 
-# Config from .env
-TOKEN = os.getenv("TOKEN")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@defaultchannel")
-INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME", "defaultinsta")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-
-# Prepare downloads folder
+# إعداد مجلد التحميل
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 user_ids = set()
 request_count = 0
 
+# ✅ التحقق من الاشتراك
 async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
@@ -31,6 +28,7 @@ async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     except:
         return False
 
+# ✅ رسالة الاشتراك الإجباري
 async def send_subscription_prompt(update: Update):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔔 اشترك في القناة", url=f"https://t.me/{CHANNEL_USERNAME.strip('@')}")],
@@ -38,6 +36,7 @@ async def send_subscription_prompt(update: Update):
     ])
     await update.message.reply_text("⚠️ لا يمكنك استخدام البوت قبل الاشتراك في القناة:", reply_markup=keyboard)
 
+# ✅ رسالة الترحيب
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not await is_user_subscribed(user.id, context):
@@ -56,6 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
+# ✅ معالجة الرسائل
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global request_count
     user = update.effective_user
@@ -79,6 +79,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ الرجاء إرسال رابط صحيح لفيديو.")
 
+# ✅ تنفيذ الأزرار
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -96,6 +97,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "audio":
         await download_mp3(query.message, url)
 
+# ✅ تحميل الفيديو بأفضل جودة وأبعاد أصلية
 async def download_best_video(message, url: str):
     try:
         filename = f"{uuid.uuid4()}.mp4"
@@ -121,6 +123,7 @@ async def download_best_video(message, url: str):
     except Exception as e:
         await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو: {e}")
 
+# ✅ تحويل الفيديو إلى MP3
 async def download_mp3(message, url: str):
     try:
         filename = f"{uuid.uuid4()}"
@@ -155,6 +158,7 @@ async def download_mp3(message, url: str):
     except Exception as e:
         await message.reply_text(f"❌ فشل التحميل: {e}")
 
+# ✅ أمر الإحصائيات للمشرف فقط
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرف فقط.")
@@ -164,6 +168,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 إحصائيات البوت:\n\n👤 عدد المستخدمين: {len(user_ids)}\n📥 عدد الطلبات: {request_count}"
     )
 
+# ✅ أمر /mp3 لتحويل مباشر
 async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❗️ استخدم الأمر:\n/mp3 <رابط>")
@@ -171,7 +176,7 @@ async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYP
     url = context.args[0]
     await download_mp3(update.message, url)
 
-# Bot setup
+# ✅ تشغيل البوت
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("stats", stats))
