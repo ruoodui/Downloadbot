@@ -2,7 +2,6 @@ import os
 import uuid
 import asyncio
 import nest_asyncio
-import json
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -10,7 +9,6 @@ from telegram.ext import (
     ContextTypes, filters
 )
 import yt_dlp
-from datetime import datetime
 
 nest_asyncio.apply()
 load_dotenv()
@@ -23,26 +21,14 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+# كتابة الكوكيز من متغير البيئة
 cookies_content = os.getenv("COOKIES", "")
 if cookies_content:
     with open("cookies.txt", "w", encoding="utf-8") as f:
         f.write(cookies_content)
 
-# ملف حفظ بيانات المستخدمين
-USERS_FILE = "users.json"
-
-# تحميل بيانات المستخدمين أو إنشاء قاموس جديد
-if os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        users_data = json.load(f)
-else:
-    users_data = {}
-
+user_ids = set()
 request_count = 0
-
-def save_users():
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users_data, f, ensure_ascii=False, indent=2)
 
 async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -64,15 +50,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_subscription_prompt(update)
         return
 
-    # تحديث بيانات المستخدم عند بدء الاستخدام
-    user_id_str = str(user.id)
-    users_data[user_id_str] = {
-        "first_name": user.first_name,
-        "username": user.username or "",
-        "last_active": datetime.utcnow().isoformat()
-    }
-    save_users()
-
     welcome_text = f"""
 👋 أهلاً {user.first_name}!
 
@@ -93,18 +70,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_subscription_prompt(update)
         return
 
-    user_id_str = str(user.id)
-    users_data[user_id_str] = {
-        "first_name": user.first_name,
-        "username": user.username or "",
-        "last_active": datetime.utcnow().isoformat()
-    }
-    save_users()
-
+    user_ids.add(user.id)
     request_count += 1
 
     url = update.message.text.strip()
-
     if any(site in url for site in ["http://", "https://"]) and "." in url:
         context.user_data["last_url"] = url
         keyboard = InlineKeyboardMarkup([
@@ -143,7 +112,7 @@ async def download_best_video(message, url: str):
             'quiet': True,
             'nocheckcertificate': True,
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                'User-Agent': 'Mozilla/5.0'
             },
             'cookiefile': 'cookies.txt'
         }
@@ -155,7 +124,14 @@ async def download_best_video(message, url: str):
         os.remove(output_path)
 
     except Exception as e:
-        await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو: {e}")
+        error_msg = str(e)
+        if "Sign in to confirm you're not a bot" in error_msg:
+            await message.reply_text(
+                "⚠️ الكوكيز انتهت صلاحيتها أو أن YouTube يطلب التحقق من الهوية.\n"
+                "يرجى تحديث ملف الكوكيز ورفعه مرة أخرى إلى متغير البيئة `COOKIES` في Railway."
+            )
+        else:
+            await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو:\n{error_msg}")
 
 async def download_mp3(message, url: str):
     try:
@@ -172,7 +148,7 @@ async def download_mp3(message, url: str):
                 'preferredquality': '192',
             }],
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                'User-Agent': 'Mozilla/5.0'
             },
             'nocheckcertificate': True,
             'cookiefile': 'cookies.txt'
@@ -182,7 +158,6 @@ async def download_mp3(message, url: str):
             ydl.download([url])
 
         mp3_path = output_path + ".mp3"
-
         if os.path.exists(mp3_path):
             await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
             os.remove(mp3_path)
@@ -190,22 +165,24 @@ async def download_mp3(message, url: str):
             await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد التحويل.")
 
     except Exception as e:
-        await message.reply_text(f"❌ فشل التحميل: {e}")
+        error_msg = str(e)
+        if "Sign in to confirm you're not a bot" in error_msg:
+            await message.reply_text(
+                "⚠️ الكوكيز انتهت صلاحيتها أو أن YouTube يطلب التحقق من الهوية.\n"
+                "يرجى تحديث ملف الكوكيز ورفعه مرة أخرى إلى متغير البيئة `COOKIES` في Railway."
+            )
+        else:
+            await message.reply_text(f"❌ فشل التحميل:\n{error_msg}")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرف فقط.")
         return
 
-    # إعداد نص تفاصيل المستخدمين
-    details = "\n\n".join(
-        f"👤 {data['first_name']} (@{data['username']})\n🕒 آخر استخدام: {data['last_active']}"
-        for data in users_data.values()
-    ) or "لا يوجد مستخدمين."
-
+    details = "\n".join([f"• `{uid}`" for uid in list(user_ids)]) or "لا يوجد مستخدمين بعد."
     await update.message.reply_text(
-        f"📊 إحصائيات البوت:\n\n👥 عدد المستخدمين: {len(users_data)}\n📥 عدد الطلبات: {request_count}\n\n" +
-        "تفاصيل المستخدمين:\n" + details
+        f"📊 إحصائيات البوت:\n\n👤 عدد المستخدمين: {len(user_ids)}\n📥 عدد الطلبات: {request_count}\n\n🧾 المستخدمون:\n{details}",
+        parse_mode="Markdown"
     )
 
 async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
