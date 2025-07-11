@@ -2,6 +2,7 @@ import os
 import uuid
 import asyncio
 import nest_asyncio
+import json
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -9,9 +10,9 @@ from telegram.ext import (
     ContextTypes, filters
 )
 import yt_dlp
+from datetime import datetime
 
 nest_asyncio.apply()
-
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
@@ -22,14 +23,26 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# كتابة محتوى ملف الكوكيز من متغير البيئة
 cookies_content = os.getenv("COOKIES", "")
 if cookies_content:
     with open("cookies.txt", "w", encoding="utf-8") as f:
         f.write(cookies_content)
 
-user_ids = set()
+# ملف حفظ بيانات المستخدمين
+USERS_FILE = "users.json"
+
+# تحميل بيانات المستخدمين أو إنشاء قاموس جديد
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
+        users_data = json.load(f)
+else:
+    users_data = {}
+
 request_count = 0
+
+def save_users():
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users_data, f, ensure_ascii=False, indent=2)
 
 async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -51,6 +64,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_subscription_prompt(update)
         return
 
+    # تحديث بيانات المستخدم عند بدء الاستخدام
+    user_id_str = str(user.id)
+    users_data[user_id_str] = {
+        "first_name": user.first_name,
+        "username": user.username or "",
+        "last_active": datetime.utcnow().isoformat()
+    }
+    save_users()
+
     welcome_text = f"""
 👋 أهلاً {user.first_name}!
 
@@ -71,7 +93,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_subscription_prompt(update)
         return
 
-    user_ids.add(user.id)
+    user_id_str = str(user.id)
+    users_data[user_id_str] = {
+        "first_name": user.first_name,
+        "username": user.username or "",
+        "last_active": datetime.utcnow().isoformat()
+    }
+    save_users()
+
     request_count += 1
 
     url = update.message.text.strip()
@@ -116,7 +145,7 @@ async def download_best_video(message, url: str):
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
-            'cookiefile': 'cookies.txt'  # تمرير ملف الكوكيز هنا
+            'cookiefile': 'cookies.txt'
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -146,7 +175,7 @@ async def download_mp3(message, url: str):
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
             'nocheckcertificate': True,
-            'cookiefile': 'cookies.txt'  # تمرير ملف الكوكيز هنا
+            'cookiefile': 'cookies.txt'
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -168,8 +197,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرف فقط.")
         return
 
+    # إعداد نص تفاصيل المستخدمين
+    details = "\n\n".join(
+        f"👤 {data['first_name']} (@{data['username']})\n🕒 آخر استخدام: {data['last_active']}"
+        for data in users_data.values()
+    ) or "لا يوجد مستخدمين."
+
     await update.message.reply_text(
-        f"📊 إحصائيات البوت:\n\n👤 عدد المستخدمين: {len(user_ids)}\n📥 عدد الطلبات: {request_count}"
+        f"📊 إحصائيات البوت:\n\n👥 عدد المستخدمين: {len(users_data)}\n📥 عدد الطلبات: {request_count}\n\n" +
+        "تفاصيل المستخدمين:\n" + details
     )
 
 async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
