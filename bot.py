@@ -1,3 +1,4 @@
+
 import os
 import uuid
 import asyncio
@@ -9,8 +10,6 @@ from telegram.ext import (
     ContextTypes, filters
 )
 import yt_dlp
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from playwright.async_api import async_playwright
 
 nest_asyncio.apply()
 load_dotenv()
@@ -20,50 +19,17 @@ CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@mitech808")
 INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME", "mitech808")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
 
-IG_USERNAME = os.getenv("IG_USER")
-IG_PASSWORD = os.getenv("IG_PASS")
-
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+# كتابة الكوكيز من متغير البيئة
+cookies_content = os.getenv("COOKIES", "")
+if cookies_content:
+    with open("cookies.txt", "w", encoding="utf-8") as f:
+        f.write(cookies_content)
+
 user_ids = set()
 request_count = 0
-
-async def generate_cookies():
-    try:
-        print("🔄 تحديث الكوكيز...")
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            page = await context.new_page()
-
-            await page.goto("https://www.instagram.com/accounts/login/")
-            await page.wait_for_selector('input[name="username"]')
-
-            await page.fill('input[name="username"]', IG_USERNAME)
-            await page.fill('input[name="password"]', IG_PASSWORD)
-            await page.click('button[type="submit"]')
-
-            # الانتظار لضمان تسجيل الدخول
-            await page.wait_for_load_state("networkidle")
-            await page.wait_for_timeout(5000)
-
-            cookies = await context.cookies()
-            with open("cookies.txt", "w", encoding="utf-8") as f:
-                for cookie in cookies:
-                    line = f"{cookie['domain']}\tTRUE\t{cookie['path']}\t{'TRUE' if cookie['secure'] else 'FALSE'}\t0\t{cookie['name']}\t{cookie['value']}\n"
-                    f.write(line)
-
-            await browser.close()
-            print("✅ تم تحديث الكوكيز.")
-    except Exception as e:
-        print("❌ فشل تحديث الكوكيز:", e)
-
-scheduler = AsyncIOScheduler()
-
-def schedule_cookie_refresh():
-    scheduler.add_job(lambda: asyncio.create_task(generate_cookies()), 'interval', minutes=30)
-    scheduler.start()
 
 async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -228,9 +194,6 @@ async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYP
     await download_mp3(update.message, url)
 
 async def main():
-    schedule_cookie_refresh()       # بدء جدولة التحديث التلقائي للكوكيز
-    await generate_cookies()        # تحديث أولي للكوكيز عند بدء التشغيل
-
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
