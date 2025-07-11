@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 import yt_dlp
 
-nest_asyncio.apply()  # لتجنب مشاكل حلقة الأحداث في بعض البيئات (Railway, Jupyter...)
+nest_asyncio.apply()
 
 load_dotenv()
 
@@ -19,14 +19,14 @@ CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@mitech808")
 INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME", "mitech808")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
 
-# إنشاء ملف الكوكيز من متغير البيئة
-cookies_content = os.getenv("YOUTUBE_COOKIES", "")
+DOWNLOAD_FOLDER = "downloads"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# كتابة محتوى ملف الكوكيز من متغير البيئة
+cookies_content = os.getenv("COOKIES", "")
 if cookies_content:
     with open("cookies.txt", "w", encoding="utf-8") as f:
         f.write(cookies_content)
-
-DOWNLOAD_FOLDER = "downloads"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 user_ids = set()
 request_count = 0
@@ -113,10 +113,10 @@ async def download_best_video(message, url: str):
             'outtmpl': output_path,
             'quiet': True,
             'nocheckcertificate': True,
-            'cookiefile': 'cookies.txt',
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
+            'cookiefile': 'cookies.txt'  # تمرير ملف الكوكيز هنا
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -142,11 +142,11 @@ async def download_mp3(message, url: str):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'cookiefile': 'cookies.txt',
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
             'nocheckcertificate': True,
+            'cookiefile': 'cookies.txt'  # تمرير ملف الكوكيز هنا
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
