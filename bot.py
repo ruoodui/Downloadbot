@@ -1,5 +1,7 @@
 import os
 import uuid
+import asyncio
+import nest_asyncio
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -8,13 +10,20 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# تحميل متغيرات البيئة
+nest_asyncio.apply()  # لتجنب مشاكل حلقة الأحداث في بعض البيئات (Railway, Jupyter...)
+
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@mitech808")
 INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME", "mitech808")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
+
+# إنشاء ملف الكوكيز من متغير البيئة
+cookies_content = os.getenv("YOUTUBE_COOKIES", "")
+if cookies_content:
+    with open("cookies.txt", "w", encoding="utf-8") as f:
+        f.write(cookies_content)
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
@@ -104,6 +113,7 @@ async def download_best_video(message, url: str):
             'outtmpl': output_path,
             'quiet': True,
             'nocheckcertificate': True,
+            'cookiefile': 'cookies.txt',
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
@@ -132,6 +142,7 @@ async def download_mp3(message, url: str):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
+            'cookiefile': 'cookies.txt',
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
@@ -168,11 +179,14 @@ async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYP
     url = context.args[0]
     await download_mp3(update.message, url)
 
-# 🚀 بدء تشغيل البوت
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("stats", stats))
-app.add_handler(CommandHandler("mp3", download_mp3_command))
-app.add_handler(CallbackQueryHandler(handle_callback))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app.run_polling()
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("mp3", download_mp3_command))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
