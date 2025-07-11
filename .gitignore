@@ -1,0 +1,18 @@
+# تجاهل ملفات الكوكيز
+cookies.txt
+
+# مجلد التحميلات
+downloads/
+
+# بيئة بايثون الافتراضية
+venv/
+env/
+__pycache__/
+
+# ملفات البيئة
+.env
+*.env
+
+# ملفات النظام
+.DS_Store
+Thumbs.db
