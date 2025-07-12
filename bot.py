@@ -16,7 +16,7 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@mitech808")
 INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME", "mitech808")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
@@ -32,16 +32,23 @@ if ig_cookies_content:
     with open("cookies_ig.txt", "w", encoding="utf-8") as f:
         f.write(ig_cookies_content)
 
-user_ids = set()
-request_count = 0
+tt_cookies_content = os.getenv("TT_COOKIES", "")
+if tt_cookies_content:
+    with open("cookies_tt.txt", "w", encoding="utf-8") as f:
+        f.write(tt_cookies_content)
 
-# اختيار ملف الكوكيز المناسب
+# تحديد ملف الكوكيز حسب الرابط
 def get_cookie_file_for_url(url: str) -> str:
     if "instagram.com" in url or "instagr.am" in url:
         return "cookies_ig.txt"
     elif "youtube.com" in url or "youtu.be" in url:
         return "cookies_yt.txt"
-    return "cookies.txt"
+    elif "tiktok.com" in url:
+        return "cookies_tt.txt"
+    return "cookies.txt"  # default fallback
+
+user_ids = set()
+request_count = 0
 
 async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -139,10 +146,10 @@ async def download_best_video(message, url: str):
 
     except Exception as e:
         error_msg = str(e)
-        if "Sign in to confirm you're not a bot" in error_msg or "login required" in error_msg or "rate-limit" in error_msg:
+        if any(err in error_msg.lower() for err in ["sign in", "login required", "rate-limit", "this post may not be comfortable"]):
             await message.reply_text(
-                "⚠️ الكوكيز منتهية أو تحتاج لتسجيل دخول.\n"
-                "يرجى تحديث متغير البيئة المناسب (`YT_COOKIES` أو `IG_COOKIES`) في Railway."
+                "⚠️ المحتوى يتطلب تسجيل دخول أو الكوكيز غير صالحة.\n"
+                "يرجى تحديث المتغيرات `YT_COOKIES`, `IG_COOKIES` أو `TT_COOKIES` في Railway."
             )
         else:
             await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو:\n{error_msg}")
@@ -181,10 +188,10 @@ async def download_mp3(message, url: str):
 
     except Exception as e:
         error_msg = str(e)
-        if "login required" in error_msg or "rate-limit" in error_msg:
+        if any(err in error_msg.lower() for err in ["login required", "rate-limit", "this post may not be comfortable"]):
             await message.reply_text(
-                "⚠️ تحميل المحتوى يتطلب تسجيل دخول.\n"
-                "يرجى تحديث متغير `IG_COOKIES` أو `YT_COOKIES` في Railway."
+                "⚠️ يتطلب تسجيل دخول أو الكوكيز غير صالحة.\n"
+                "يرجى تحديث المتغيرات `YT_COOKIES`, `IG_COOKIES` أو `TT_COOKIES` في Railway."
             )
         else:
             await message.reply_text(f"❌ فشل التحميل:\n{error_msg}")
