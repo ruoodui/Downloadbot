@@ -1,4 +1,3 @@
-
 import os
 import uuid
 import asyncio
@@ -22,14 +21,27 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "193646746"))
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# كتابة الكوكيز من متغير البيئة
-cookies_content = os.getenv("COOKIES", "")
-if cookies_content:
-    with open("cookies.txt", "w", encoding="utf-8") as f:
-        f.write(cookies_content)
+# تحميل الكوكيز من متغيرات البيئة
+yt_cookies_content = os.getenv("YT_COOKIES", "")
+if yt_cookies_content:
+    with open("cookies_yt.txt", "w", encoding="utf-8") as f:
+        f.write(yt_cookies_content)
+
+ig_cookies_content = os.getenv("IG_COOKIES", "")
+if ig_cookies_content:
+    with open("cookies_ig.txt", "w", encoding="utf-8") as f:
+        f.write(ig_cookies_content)
 
 user_ids = set()
 request_count = 0
+
+# اختيار ملف الكوكيز المناسب
+def get_cookie_file_for_url(url: str) -> str:
+    if "instagram.com" in url or "instagr.am" in url:
+        return "cookies_ig.txt"
+    elif "youtube.com" in url or "youtu.be" in url:
+        return "cookies_yt.txt"
+    return "cookies.txt"
 
 async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -106,16 +118,17 @@ async def download_best_video(message, url: str):
     try:
         filename = f"{uuid.uuid4()}.mp4"
         output_path = os.path.join(DOWNLOAD_FOLDER, filename)
+        cookie_file = get_cookie_file_for_url(url)
 
         ydl_opts = {
             'format': 'best',
             'outtmpl': output_path,
             'quiet': True,
             'nocheckcertificate': True,
+            'cookiefile': cookie_file,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0'
-            },
-            'cookiefile': 'cookies.txt'
+            }
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -126,10 +139,10 @@ async def download_best_video(message, url: str):
 
     except Exception as e:
         error_msg = str(e)
-        if "Sign in to confirm you're not a bot" in error_msg:
+        if "Sign in to confirm you're not a bot" in error_msg or "login required" in error_msg or "rate-limit" in error_msg:
             await message.reply_text(
-                "⚠️ الكوكيز انتهت صلاحيتها أو أن YouTube يطلب التحقق من الهوية.\n"
-                "يرجى تحديث ملف الكوكيز ورفعه مرة أخرى إلى متغير البيئة `COOKIES` في Railway."
+                "⚠️ الكوكيز منتهية أو تحتاج لتسجيل دخول.\n"
+                "يرجى تحديث متغير البيئة المناسب (`YT_COOKIES` أو `IG_COOKIES`) في Railway."
             )
         else:
             await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو:\n{error_msg}")
@@ -138,6 +151,7 @@ async def download_mp3(message, url: str):
     try:
         filename = f"{uuid.uuid4()}"
         output_path = os.path.join(DOWNLOAD_FOLDER, filename)
+        cookie_file = get_cookie_file_for_url(url)
 
         ydl_opts = {
             'outtmpl': output_path,
@@ -152,7 +166,7 @@ async def download_mp3(message, url: str):
                 'User-Agent': 'Mozilla/5.0'
             },
             'nocheckcertificate': True,
-            'cookiefile': 'cookies.txt'
+            'cookiefile': cookie_file
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -167,10 +181,10 @@ async def download_mp3(message, url: str):
 
     except Exception as e:
         error_msg = str(e)
-        if "Sign in to confirm you're not a bot" in error_msg:
+        if "login required" in error_msg or "rate-limit" in error_msg:
             await message.reply_text(
-                "⚠️ الكوكيز انتهت صلاحيتها أو أن YouTube يطلب التحقق من الهوية.\n"
-                "يرجى تحديث ملف الكوكيز ورفعه مرة أخرى إلى متغير البيئة `COOKIES` في Railway."
+                "⚠️ تحميل المحتوى يتطلب تسجيل دخول.\n"
+                "يرجى تحديث متغير `IG_COOKIES` أو `YT_COOKIES` في Railway."
             )
         else:
             await message.reply_text(f"❌ فشل التحميل:\n{error_msg}")
