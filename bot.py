@@ -21,7 +21,6 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# حفظ ملفات الكوكيز
 def save_cookie_file(filename, env_key):
     content = os.getenv(env_key, "")
     if content:
@@ -58,13 +57,6 @@ async def send_subscription_prompt(update: Update):
     ])
     await update.message.reply_text("⚠️ لا يمكنك استخدام البوت قبل الاشتراك في القناة:", reply_markup=keyboard)
 
-async def delete_after_delay(context, message, delay=10):
-    await asyncio.sleep(delay)
-    try:
-        await message.delete()
-    except:
-        pass
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not await is_user_subscribed(user.id, context):
@@ -100,8 +92,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📥 تحميل فيديو", callback_data="video_menu")],
             [InlineKeyboardButton("🎧 تحويل إلى MP3", callback_data="audio_menu")]
         ])
-        msg = await update.message.reply_text("اختر نوع التحميل:", reply_markup=keyboard)
-        await delete_after_delay(context, msg, 60)
+        await update.message.reply_text("اختر نوع التحميل:", reply_markup=keyboard)
     else:
         await update.message.reply_text("❌ الرجاء إرسال رابط صحيح.")
 
@@ -110,11 +101,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     action = query.data
     url = context.user_data.get("last_url")
-
-    try:
-        await query.message.delete()
-    except:
-        pass
 
     if action in ["video_menu", "audio_menu"]:
         if not url:
@@ -127,8 +113,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔻 جودة منخفضة", callback_data=f"{action}_low")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
         ])
-        msg = await query.message.reply_text("اختر الجودة:", reply_markup=keyboard)
-        await delete_after_delay(context, msg, 60)
+        await query.message.edit_text("اختر الجودة:", reply_markup=keyboard)
         return
 
     if action == "back":
@@ -136,8 +121,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📥 تحميل فيديو", callback_data="video_menu")],
             [InlineKeyboardButton("🎧 تحويل إلى MP3", callback_data="audio_menu")]
         ])
-        msg = await query.message.reply_text("اختر نوع التحميل:", reply_markup=keyboard)
-        await delete_after_delay(context, msg, 60)
+        await query.message.edit_text("اختر نوع التحميل:", reply_markup=keyboard)
         return
 
     if not url:
@@ -174,7 +158,8 @@ async def download_video(message, url, quality, context):
             ydl.download([url])
 
         await message.reply_video(video=open(output, 'rb'))
-        await delete_after_delay(context, message, 5)
+        await asyncio.sleep(5)
+        await message.delete()
         os.remove(output)
 
     except Exception as e:
@@ -205,7 +190,8 @@ async def download_mp3(message, url, quality, context):
 
         mp3_path = output + ".mp3"
         await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
-        await delete_after_delay(context, message, 5)
+        await asyncio.sleep(5)
+        await message.delete()
         os.remove(mp3_path)
 
     except Exception as e:
