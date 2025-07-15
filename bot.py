@@ -3,6 +3,7 @@ import uuid
 import asyncio
 import nest_asyncio
 import traceback
+import time
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -146,8 +147,16 @@ async def download_video(message, url, quality, context):
         output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
+        last_update = 0
+
         async def progress_hook(d):
-            if d['status'] == 'downloading':
+            nonlocal last_update
+            now = time.time()
+            if now - last_update < 1:
+                return
+            last_update = now
+
+            if d and d.get('status') == 'downloading':
                 total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
                 eta = d.get('eta')
@@ -182,7 +191,10 @@ async def download_video(message, url, quality, context):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        await message.reply_video(video=open(output, 'rb'))
+        # تأكد من فتح الملف فقط عند الإرسال وبعد ذلك إغلاقه فوراً
+        with open(output, 'rb') as video_file:
+            await message.reply_video(video=video_file)
+
         await asyncio.sleep(5)
         await message.delete()
         os.remove(output)
@@ -216,8 +228,16 @@ async def download_mp3(message, url, quality, context):
         output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
+        last_update = 0
+
         async def progress_hook(d):
-            if d['status'] == 'downloading':
+            nonlocal last_update
+            now = time.time()
+            if now - last_update < 1:
+                return
+            last_update = now
+
+            if d and d.get('status') == 'downloading':
                 total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
                 eta = d.get('eta')
@@ -257,7 +277,9 @@ async def download_mp3(message, url, quality, context):
             ydl.download([url])
 
         mp3_path = output + ".mp3"
-        await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
+        with open(mp3_path, 'rb') as audio_file:
+            await message.reply_document(document=audio_file, filename="audio.mp3")
+
         await asyncio.sleep(5)
         await message.delete()
         os.remove(mp3_path)
