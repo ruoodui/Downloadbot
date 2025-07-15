@@ -150,16 +150,18 @@ async def download_video(message, url, quality, context):
             if d['status'] == 'downloading':
                 total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
-                eta = d.get('eta', 0)
+                eta = d.get('eta')
 
                 if total_bytes:
                     percent = downloaded / total_bytes * 100
                     mb_downloaded = downloaded / (1024 * 1024)
                     mb_total = total_bytes / (1024 * 1024)
+                    eta_text = f"{int(eta)} ثانية" if eta else "غير معروف"
+
                     text = (
                         f"📥 جاري التحميل...\n"
                         f"{percent:.1f}% - {mb_downloaded:.1f} MB / {mb_total:.1f} MB\n"
-                        f"⏳ الوقت المتبقي: {int(eta)} ثانية"
+                        f"⏳ الوقت المتبقي: {eta_text}"
                     )
                     try:
                         await message.edit_text(text)
@@ -218,16 +220,18 @@ async def download_mp3(message, url, quality, context):
             if d['status'] == 'downloading':
                 total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
-                eta = d.get('eta', 0)
+                eta = d.get('eta')
 
                 if total_bytes:
                     percent = downloaded / total_bytes * 100
                     mb_downloaded = downloaded / (1024 * 1024)
                     mb_total = total_bytes / (1024 * 1024)
+                    eta_text = f"{int(eta)} ثانية" if eta else "غير معروف"
+
                     text = (
                         f"📥 جاري التحميل...\n"
                         f"{percent:.1f}% - {mb_downloaded:.1f} MB / {mb_total:.1f} MB\n"
-                        f"⏳ الوقت المتبقي: {int(eta)} ثانية"
+                        f"⏳ الوقت المتبقي: {eta_text}"
                     )
                     try:
                         await message.edit_text(text)
