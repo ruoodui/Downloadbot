@@ -21,30 +21,24 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# تحميل الكوكيز من متغيرات البيئة
-yt_cookies_content = os.getenv("YT_COOKIES", "")
-if yt_cookies_content:
-    with open("cookies_yt.txt", "w", encoding="utf-8") as f:
-        f.write(yt_cookies_content)
+def save_cookie_file(filename, env_key):
+    content = os.getenv(env_key, "")
+    if content:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(content)
 
-ig_cookies_content = os.getenv("IG_COOKIES", "")
-if ig_cookies_content:
-    with open("cookies_ig.txt", "w", encoding="utf-8") as f:
-        f.write(ig_cookies_content)
-
-tt_cookies_content = os.getenv("TT_COOKIES", "")
-if tt_cookies_content:
-    with open("cookies_tt.txt", "w", encoding="utf-8") as f:
-        f.write(tt_cookies_content)
+save_cookie_file("cookies_yt.txt", "YT_COOKIES")
+save_cookie_file("cookies_ig.txt", "IG_COOKIES")
+save_cookie_file("cookies_tt.txt", "TT_COOKIES")
 
 def get_cookie_file_for_url(url: str) -> str:
-    if "instagram.com" in url or "instagr.am" in url:
+    if "instagram.com" in url:
         return "cookies_ig.txt"
     elif "youtube.com" in url or "youtu.be" in url:
         return "cookies_yt.txt"
     elif "tiktok.com" in url:
         return "cookies_tt.txt"
-    return "cookies.txt"  # fallback
+    return ""
 
 user_ids = set()
 request_count = 0
@@ -69,241 +63,156 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_subscription_prompt(update)
         return
 
-    welcome_text = f"""
+    welcome = f"""
 👋 أهلاً {user.first_name}!
 
-🔹 يدعم تحميل الفيديو والصوت من YouTube، TikTok، Instagram، وغيرها.
+🔹 يدعم تحميل الفيديو والصوت من YouTube وInstagram وTikTok.
 
-📥 فقط أرسل رابط الفيديو وسيظهر لك خيارات التحميل.
-🎧 استخدم /mp3 <رابط> لتحويل الفيديو إلى MP3 مباشرة.
+📥 فقط أرسل الرابط وسيظهر لك خيارات التحميل.
+🎧 استخدم /mp3 <الرابط> لتحميل MP3.
 
 ⚠️ تأكد من حقوق المحتوى قبل الاستخدام.
 """
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+    await update.message.reply_text(welcome.strip(), parse_mode="Markdown")
 
-# عند استلام رسالة (رابط) نجيب جودات الفيديو المتاحة
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global request_count
     user = update.effective_user
-
     if not await is_user_subscribed(user.id, context):
         await send_subscription_prompt(update)
         return
 
+    user_ids.add(user.id)
+    request_count += 1
+
     url = update.message.text.strip()
-    if not (any(site in url for site in ["http://", "https://"]) and "." in url):
-        await update.message.reply_text("❌ الرجاء إرسال رابط صحيح لفيديو.")
-        return
-
-    context.user_data["last_url"] = url
-
-    cookie_file = get_cookie_file_for_url(url)
-    ydl_opts = {
-        'quiet': True,
-        'skip_download': True,
-        'cookiefile': cookie_file,
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            formats = info.get('formats', [])
-    except Exception as e:
-        await update.message.reply_text(f"❌ خطأ عند جلب جودات الفيديو:\n{e}")
-        return
-
-    # جلب جودات فيديو تحتوي صوت وفيديو (مدمجة)
-    video_formats = []
-    for f in formats:
-        if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-            height = f.get('height')
-            if height:
-                video_formats.append((str(height) + "p", f['format_id']))
-
-    seen = set()
-    filtered_formats = []
-    for q, fid in sorted(video_formats, key=lambda x: int(x[0].replace("p", "")), reverse=True):
-        if q not in seen:
-            filtered_formats.append((q, fid))
-            seen.add(q)
-
-    if not filtered_formats:
+    if url.startswith("http") and "." in url:
+        context.user_data["last_url"] = url
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")],
-            [InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")]
+            [InlineKeyboardButton("📥 تحميل فيديو", callback_data="video_menu")],
+            [InlineKeyboardButton("🎧 تحويل إلى MP3", callback_data="audio_menu")]
         ])
-        await update.message.reply_text("لم نتمكن من جلب جودات الفيديو، اختر:", reply_markup=keyboard)
-        return
-
-    buttons = []
-    for q, fid in filtered_formats:
-        buttons.append([InlineKeyboardButton(q, callback_data=f"quality_{fid}")])
-    buttons.append([InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")])
-    buttons.append([InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")])
-
-    await update.message.reply_text(
-        "اختر جودة الفيديو للتحميل أو تحميل الصوت فقط:",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        await update.message.reply_text("اختر نوع التحميل:", reply_markup=keyboard)
+    else:
+        await update.message.reply_text("❌ الرجاء إرسال رابط صحيح.")
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
+    action = query.data
     url = context.user_data.get("last_url")
 
-    if data == "cancel":
-        await query.edit_message_text("تم إلغاء العملية.")
-        return
-
-    if data == "audio":
+    if action in ["video_menu", "audio_menu"]:
         if not url:
-            await query.message.reply_text("❌ لم يتم العثور على رابط محفوظ. أرسل الرابط مرة أخرى.")
+            await query.message.reply_text("❌ لم يتم العثور على رابط محفوظ.")
             return
-        await query.edit_message_text("⏳ جاري تحميل وتحويل الصوت...")
-        await download_mp3(query.message, url)
+
+        context.user_data["last_action"] = action
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🟢 جودة عالية", callback_data=f"{action}_high")],
+            [InlineKeyboardButton("🔻 جودة منخفضة", callback_data=f"{action}_low")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
+        ])
+        await query.message.edit_text("اختر الجودة:", reply_markup=keyboard)
         return
 
-    if data.startswith("quality_"):
-        if not url:
-            await query.message.reply_text("❌ لم يتم العثور على رابط محفوظ. أرسل الرابط مرة أخرى.")
-            return
-        format_id = data[len("quality_"):]
-        await query.edit_message_text(f"⏳ جاري تحميل الفيديو بالجودة {format_id}...")
-        await download_video_by_format(query.message, url, format_id)
+    if action == "back":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 تحميل فيديو", callback_data="video_menu")],
+            [InlineKeyboardButton("🎧 تحويل إلى MP3", callback_data="audio_menu")]
+        ])
+        await query.message.edit_text("اختر نوع التحميل:", reply_markup=keyboard)
         return
 
-    if data == "back_to_quality_selection":
-        if not url:
-            await query.edit_message_text("❌ لم يتم العثور على رابط محفوظ. أرسل الرابط مرة أخرى.")
-            return
-
-        # إعادة عرض قائمة الجودات كما في handle_message
-        cookie_file = get_cookie_file_for_url(url)
-        ydl_opts = {
-            'quiet': True,
-            'skip_download': True,
-            'cookiefile': cookie_file,
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                formats = info.get('formats', [])
-        except Exception as e:
-            await query.edit_message_text(f"❌ خطأ عند جلب جودات الفيديو:\n{e}")
-            return
-
-        video_formats = []
-        for f in formats:
-            if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                height = f.get('height')
-                if height:
-                    video_formats.append((str(height) + "p", f['format_id']))
-
-        seen = set()
-        filtered_formats = []
-        for q, fid in sorted(video_formats, key=lambda x: int(x[0].replace("p", "")), reverse=True):
-            if q not in seen:
-                filtered_formats.append((q, fid))
-                seen.add(q)
-
-        buttons = []
-        for q, fid in filtered_formats:
-            buttons.append([InlineKeyboardButton(q, callback_data=f"quality_{fid}")])
-        buttons.append([InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")])
-        buttons.append([InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")])
-
-        await query.edit_message_text(
-            "اختر جودة الفيديو للتحميل أو تحميل الصوت فقط:",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+    if not url:
+        await query.message.reply_text("❌ لم يتم العثور على رابط محفوظ.")
         return
 
-    # حماية لأوامر أخرى ممكن تضيفها لاحقاً
+    loading_msg = await query.message.reply_text("⏳ جاري التحميل...")
 
-async def download_video_by_format(message, url: str, format_id: str):
+    if action == "video_menu_high":
+        await download_video(loading_msg, url, "best", context)
+    elif action == "video_menu_low":
+        await download_video(loading_msg, url, "worst", context)
+    elif action == "audio_menu_high":
+        await download_mp3(loading_msg, url, "192", context)
+    elif action == "audio_menu_low":
+        await download_mp3(loading_msg, url, "64", context)
+
+async def download_video(message, url, quality, context):
     try:
         filename = f"{uuid.uuid4()}.mp4"
-        output_path = os.path.join(DOWNLOAD_FOLDER, filename)
+        output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
         ydl_opts = {
-            'format': format_id,
-            'outtmpl': output_path,
+            'format': quality,
+            'outtmpl': output,
             'quiet': True,
             'nocheckcertificate': True,
             'cookiefile': cookie_file,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0'
-            }
+            'http_headers': {'User-Agent': 'Mozilla/5.0'}
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        await message.reply_video(video=open(output_path, 'rb'))
-
-        # زر رجوع بعد التحميل
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 رجوع لاختيار جودة أخرى", callback_data="back_to_quality_selection")]
-        ])
-        await message.reply_text("يمكنك اختيار تحميل آخر:", reply_markup=keyboard)
-
-        os.remove(output_path)
+        await message.reply_video(video=open(output, 'rb'))
+        await asyncio.sleep(5)
+        await message.delete()
+        os.remove(output)
 
     except Exception as e:
-        await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو:\n{e}")
+        await message.reply_text(f"❌ خطأ في تحميل الفيديو:\n{e}")
 
-async def download_mp3(message, url: str):
+async def download_mp3(message, url, quality, context):
     try:
         filename = f"{uuid.uuid4()}"
-        output_path = os.path.join(DOWNLOAD_FOLDER, filename)
+        output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
         ydl_opts = {
-            'outtmpl': output_path,
-            'quiet': True,
             'format': 'bestaudio/best',
+            'outtmpl': output,
+            'quiet': True,
+            'nocheckcertificate': True,
+            'cookiefile': cookie_file,
+            'http_headers': {'User-Agent': 'Mozilla/5.0'},
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0'
-            },
-            'nocheckcertificate': True,
-            'cookiefile': cookie_file
+                'preferredquality': quality
+            }]
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        mp3_path = output_path + ".mp3"
-        if os.path.exists(mp3_path):
-            await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
-            os.remove(mp3_path)
-        else:
-            await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد التحويل.")
+        mp3_path = output + ".mp3"
+        await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
+        await asyncio.sleep(5)
+        await message.delete()
+        os.remove(mp3_path)
 
     except Exception as e:
-        await message.reply_text(f"❌ فشل تحميل الصوت:\n{e}")
+        await message.reply_text(f"❌ خطأ في تحميل الصوت:\n{e}")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرف فقط.")
         return
-
-    details = "\n".join([f"• {uid}" for uid in list(user_ids)]) or "لا يوجد مستخدمين بعد."
+    users = "\n".join([f"• `{u}`" for u in user_ids]) or "لا يوجد."
     await update.message.reply_text(
-        f"📊 إحصائيات البوت:\n\n👤 عدد المستخدمين: {len(user_ids)}\n📥 عدد الطلبات: {request_count}\n\n🧾 المستخدمون:\n{details}",
+        f"📊 إحصائيات:\n👤 المستخدمين: {len(user_ids)}\n📥 الطلبات: {request_count}\n\n{users}",
         parse_mode="Markdown"
     )
 
 async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❗️ استخدم الأمر:\n/mp3 <رابط>")
+        await update.message.reply_text("❗️ استخدم:\n/mp3 <الرابط>")
         return
     url = context.args[0]
-    await download_mp3(update.message, url)
+    await download_mp3(update.message, url, "192", context)
 
 async def main():
     app = ApplicationBuilder().token(TOKEN).build()
