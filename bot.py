@@ -2,8 +2,6 @@ import os
 import uuid
 import asyncio
 import nest_asyncio
-import traceback
-import time
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -147,116 +145,31 @@ async def download_video(message, url, quality, context):
         output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
-        last_update = 0
-
-        async def progress_hook(d):
-            nonlocal last_update
-            now = time.time()
-            if now - last_update < 1:
-                return
-            last_update = now
-
-            if d and d.get('status') == 'downloading':
-                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-                downloaded = d.get('downloaded_bytes', 0)
-                eta = d.get('eta')
-
-                if total_bytes:
-                    percent = downloaded / total_bytes * 100
-                    mb_downloaded = downloaded / (1024 * 1024)
-                    mb_total = total_bytes / (1024 * 1024)
-                    eta_text = f"{int(eta)} ثانية" if eta else "غير معروف"
-
-                    text = (
-                        f"📥 جاري التحميل...\n"
-                        f"{percent:.1f}% - {mb_downloaded:.1f} MB / {mb_total:.1f} MB\n"
-                        f"⏳ الوقت المتبقي: {eta_text}"
-                    )
-                    try:
-                        await message.edit_text(text)
-                    except:
-                        pass
-
         ydl_opts = {
-            'format': f"{quality}+bestaudio/best",
+            'format': quality,
             'outtmpl': output,
             'quiet': True,
             'nocheckcertificate': True,
             'cookiefile': cookie_file,
-            'merge_output_format': 'mp4',
-            'http_headers': {'User-Agent': 'Mozilla/5.0'},
-            'progress_hooks': [lambda d: asyncio.create_task(progress_hook(d))]
+            'http_headers': {'User-Agent': 'Mozilla/5.0'}
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # تأكد من فتح الملف فقط عند الإرسال وبعد ذلك إغلاقه فوراً
-        with open(output, 'rb') as video_file:
-            await message.reply_video(video=video_file)
-
+        await message.reply_video(video=open(output, 'rb'))
         await asyncio.sleep(5)
         await message.delete()
         os.remove(output)
 
     except Exception as e:
-        error_msg = str(e)
-        tb = traceback.format_exc()
-
-        if "403" in error_msg:
-            msg = "❌ لا يمكن تحميل الفيديو (ربما خاص أو الكوكيز غير صالحة)."
-        elif "Unsupported URL" in error_msg:
-            msg = "❌ الرابط غير مدعوم."
-        elif "private" in error_msg:
-            msg = "❌ الفيديو خاص ولا يمكن تحميله."
-        elif "unavailable" in error_msg:
-            msg = "❌ الفيديو غير متاح أو تم حذفه."
-        else:
-            msg = f"❌ خطأ غير معروف:\n{error_msg}"
-
-        print("Traceback:\n", tb)
-        await message.reply_text(
-            msg,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔁 حاول مجددًا", callback_data=context.user_data.get("last_action", "video_menu"))]
-            ])
-        )
+        await message.reply_text(f"❌ خطأ في تحميل الفيديو:\n{e}")
 
 async def download_mp3(message, url, quality, context):
     try:
         filename = f"{uuid.uuid4()}"
         output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
-
-        last_update = 0
-
-        async def progress_hook(d):
-            nonlocal last_update
-            now = time.time()
-            if now - last_update < 1:
-                return
-            last_update = now
-
-            if d and d.get('status') == 'downloading':
-                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-                downloaded = d.get('downloaded_bytes', 0)
-                eta = d.get('eta')
-
-                if total_bytes:
-                    percent = downloaded / total_bytes * 100
-                    mb_downloaded = downloaded / (1024 * 1024)
-                    mb_total = total_bytes / (1024 * 1024)
-                    eta_text = f"{int(eta)} ثانية" if eta else "غير معروف"
-
-                    text = (
-                        f"📥 جاري التحميل...\n"
-                        f"{percent:.1f}% - {mb_downloaded:.1f} MB / {mb_total:.1f} MB\n"
-                        f"⏳ الوقت المتبقي: {eta_text}"
-                    )
-                    try:
-                        await message.edit_text(text)
-                    except:
-                        pass
 
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -269,39 +182,26 @@ async def download_mp3(message, url, quality, context):
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': quality
-            }],
-            'progress_hooks': [lambda d: asyncio.create_task(progress_hook(d))]
+            }]
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
         mp3_path = output + ".mp3"
-        with open(mp3_path, 'rb') as audio_file:
-            await message.reply_document(document=audio_file, filename="audio.mp3")
-
+        await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
         await asyncio.sleep(5)
         await message.delete()
         os.remove(mp3_path)
 
     except Exception as e:
-        error_msg = str(e)
-        tb = traceback.format_exc()
-        msg = f"❌ خطأ أثناء التحميل:\n{error_msg}"
-
-        print("Traceback:\n", tb)
-        await message.reply_text(
-            msg,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔁 حاول مجددًا", callback_data=context.user_data.get("last_action", "audio_menu"))]
-            ])
-        )
+        await message.reply_text(f"❌ خطأ في تحميل الصوت:\n{e}")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرف فقط.")
         return
-    users = "\n".join([f"• `{u}`" for u in user_ids]) or "لا يوجد."
+    users = "\n".join([f"• {u}" for u in user_ids]) or "لا يوجد."
     await update.message.reply_text(
         f"📊 إحصائيات:\n👤 المستخدمين: {len(user_ids)}\n📥 الطلبات: {request_count}\n\n{users}",
         parse_mode="Markdown"
