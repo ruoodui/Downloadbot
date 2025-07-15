@@ -2,6 +2,7 @@ import os
 import uuid
 import asyncio
 import nest_asyncio
+import traceback
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -145,13 +146,34 @@ async def download_video(message, url, quality, context):
         output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
+        async def progress_hook(d):
+            if d['status'] == 'downloading':
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded = d.get('downloaded_bytes', 0)
+                eta = d.get('eta', 0)
+
+                if total_bytes:
+                    percent = downloaded / total_bytes * 100
+                    mb_downloaded = downloaded / (1024 * 1024)
+                    mb_total = total_bytes / (1024 * 1024)
+                    text = (
+                        f"📥 جاري التحميل...\n"
+                        f"{percent:.1f}% - {mb_downloaded:.1f} MB / {mb_total:.1f} MB\n"
+                        f"⏳ الوقت المتبقي: {int(eta)} ثانية"
+                    )
+                    try:
+                        await message.edit_text(text)
+                    except:
+                        pass
+
         ydl_opts = {
             'format': quality,
             'outtmpl': output,
             'quiet': True,
             'nocheckcertificate': True,
             'cookiefile': cookie_file,
-            'http_headers': {'User-Agent': 'Mozilla/5.0'}
+            'http_headers': {'User-Agent': 'Mozilla/5.0'},
+            'progress_hooks': [lambda d: asyncio.create_task(progress_hook(d))]
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -163,13 +185,53 @@ async def download_video(message, url, quality, context):
         os.remove(output)
 
     except Exception as e:
-        await message.reply_text(f"❌ خطأ في تحميل الفيديو:\n{e}")
+        error_msg = str(e)
+        tb = traceback.format_exc()
+
+        if "403" in error_msg:
+            msg = "❌ لا يمكن تحميل الفيديو (ربما خاص أو الكوكيز غير صالحة)."
+        elif "Unsupported URL" in error_msg:
+            msg = "❌ الرابط غير مدعوم."
+        elif "private" in error_msg:
+            msg = "❌ الفيديو خاص ولا يمكن تحميله."
+        elif "unavailable" in error_msg:
+            msg = "❌ الفيديو غير متاح أو تم حذفه."
+        else:
+            msg = f"❌ خطأ غير معروف:\n{error_msg}"
+
+        print("Traceback:\n", tb)
+        await message.reply_text(
+            msg,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔁 حاول مجددًا", callback_data=context.user_data.get("last_action", "video_menu"))]
+            ])
+        )
 
 async def download_mp3(message, url, quality, context):
     try:
         filename = f"{uuid.uuid4()}"
         output = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
+
+        async def progress_hook(d):
+            if d['status'] == 'downloading':
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded = d.get('downloaded_bytes', 0)
+                eta = d.get('eta', 0)
+
+                if total_bytes:
+                    percent = downloaded / total_bytes * 100
+                    mb_downloaded = downloaded / (1024 * 1024)
+                    mb_total = total_bytes / (1024 * 1024)
+                    text = (
+                        f"📥 جاري التحميل...\n"
+                        f"{percent:.1f}% - {mb_downloaded:.1f} MB / {mb_total:.1f} MB\n"
+                        f"⏳ الوقت المتبقي: {int(eta)} ثانية"
+                    )
+                    try:
+                        await message.edit_text(text)
+                    except:
+                        pass
 
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -182,7 +244,8 @@ async def download_mp3(message, url, quality, context):
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': quality
-            }]
+            }],
+            'progress_hooks': [lambda d: asyncio.create_task(progress_hook(d))]
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -195,7 +258,17 @@ async def download_mp3(message, url, quality, context):
         os.remove(mp3_path)
 
     except Exception as e:
-        await message.reply_text(f"❌ خطأ في تحميل الصوت:\n{e}")
+        error_msg = str(e)
+        tb = traceback.format_exc()
+        msg = f"❌ خطأ أثناء التحميل:\n{error_msg}"
+
+        print("Traceback:\n", tb)
+        await message.reply_text(
+            msg,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔁 حاول مجددًا", callback_data=context.user_data.get("last_action", "audio_menu"))]
+            ])
+        )
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
