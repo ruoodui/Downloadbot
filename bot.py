@@ -167,11 +167,12 @@ async def download_video(message, url, quality, context):
                         pass
 
         ydl_opts = {
-            'format': quality,
+            'format': f"{quality}+bestaudio/best",
             'outtmpl': output,
             'quiet': True,
             'nocheckcertificate': True,
             'cookiefile': cookie_file,
+            'merge_output_format': 'mp4',
             'http_headers': {'User-Agent': 'Mozilla/5.0'},
             'progress_hooks': [lambda d: asyncio.create_task(progress_hook(d))]
         }
