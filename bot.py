@@ -21,6 +21,9 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+# أقصى حجم للملفات (50 ميجابايت)
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 ميجابايت
+
 # تحميل الكوكيز من متغيرات البيئة
 yt_cookies_content = os.getenv("YT_COOKIES", "")
 if yt_cookies_content:
@@ -81,7 +84,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
-# عند استلام رسالة (رابط) نجيب جودات الفيديو المتاحة
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -116,16 +118,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
             height = f.get('height')
             if height:
-                video_formats.append((str(height) + "p", f['format_id']))
+                video_formats.append((int(height), f['format_id']))
 
-    seen = set()
-    filtered_formats = []
-    for q, fid in sorted(video_formats, key=lambda x: int(x[0].replace("p", "")), reverse=True):
-        if q not in seen:
-            filtered_formats.append((q, fid))
-            seen.add(q)
-
-    if not filtered_formats:
+    if not video_formats:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")],
             [InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")]
@@ -133,14 +128,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("لم نتمكن من جلب جودات الفيديو، اختر:", reply_markup=keyboard)
         return
 
-    buttons = []
-    for q, fid in filtered_formats:
-        buttons.append([InlineKeyboardButton(q, callback_data=f"quality_{fid}")])
-    buttons.append([InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")])
-    buttons.append([InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")])
+    video_formats.sort(key=lambda x: x[0])  # تصاعدي حسب الجودة (الارتفاع)
+
+    context.user_data["video_formats"] = video_formats  # تخزين الجودات لاستخدامها لاحقًا
+
+    buttons = [
+        [InlineKeyboardButton("▶️ تحميل فيديو", callback_data="download_video_menu")],
+        [InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")],
+        [InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")]
+    ]
 
     await update.message.reply_text(
-        "اختر جودة الفيديو للتحميل أو تحميل الصوت فقط:",
+        "اختر طريقة التحميل:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -149,6 +148,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     url = context.user_data.get("last_url")
+    video_formats = context.user_data.get("video_formats", [])
 
     if data == "cancel":
         await query.edit_message_text("تم إلغاء العملية.")
@@ -162,6 +162,39 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await download_mp3(query.message, url)
         return
 
+    if data == "download_video_menu":
+        if not video_formats:
+            await query.edit_message_text("❌ لا توجد معلومات جودة لتحميل الفيديو.")
+            return
+
+        video_formats.sort(key=lambda x: x[0])  # تصاعدي حسب الجودة
+
+        highest_quality = video_formats[-1][1]  # أعلى جودة
+        lowest_quality = video_formats[0][1]    # أقل جودة
+
+        buttons = [
+            [InlineKeyboardButton("📺 جودة عالية", callback_data=f"quality_{highest_quality}")],
+            [InlineKeyboardButton("📺 جودة منخفضة", callback_data=f"quality_{lowest_quality}")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main_menu")]
+        ]
+        await query.edit_message_text(
+            "اختر جودة التحميل:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
+
+    if data == "back_to_main_menu":
+        buttons = [
+            [InlineKeyboardButton("▶️ تحميل فيديو", callback_data="download_video_menu")],
+            [InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")],
+            [InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")]
+        ]
+        await query.edit_message_text(
+            "اختر طريقة التحميل:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
+
     if data.startswith("quality_"):
         if not url:
             await query.message.reply_text("❌ لم يتم العثور على رابط محفوظ. أرسل الرابط مرة أخرى.")
@@ -170,54 +203,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"⏳ جاري تحميل الفيديو بالجودة {format_id}...")
         await download_video_by_format(query.message, url, format_id)
         return
-
-    if data == "back_to_quality_selection":
-        if not url:
-            await query.edit_message_text("❌ لم يتم العثور على رابط محفوظ. أرسل الرابط مرة أخرى.")
-            return
-
-        # إعادة عرض قائمة الجودات كما في handle_message
-        cookie_file = get_cookie_file_for_url(url)
-        ydl_opts = {
-            'quiet': True,
-            'skip_download': True,
-            'cookiefile': cookie_file,
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                formats = info.get('formats', [])
-        except Exception as e:
-            await query.edit_message_text(f"❌ خطأ عند جلب جودات الفيديو:\n{e}")
-            return
-
-        video_formats = []
-        for f in formats:
-            if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                height = f.get('height')
-                if height:
-                    video_formats.append((str(height) + "p", f['format_id']))
-
-        seen = set()
-        filtered_formats = []
-        for q, fid in sorted(video_formats, key=lambda x: int(x[0].replace("p", "")), reverse=True):
-            if q not in seen:
-                filtered_formats.append((q, fid))
-                seen.add(q)
-
-        buttons = []
-        for q, fid in filtered_formats:
-            buttons.append([InlineKeyboardButton(q, callback_data=f"quality_{fid}")])
-        buttons.append([InlineKeyboardButton("🎧 تحميل صوت MP3", callback_data="audio")])
-        buttons.append([InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")])
-
-        await query.edit_message_text(
-            "اختر جودة الفيديو للتحميل أو تحميل الصوت فقط:",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-
-    # حماية لأوامر أخرى ممكن تضيفها لاحقاً
 
 async def download_video_by_format(message, url: str, format_id: str):
     try:
@@ -239,11 +224,16 @@ async def download_video_by_format(message, url: str, format_id: str):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
+        file_size = os.path.getsize(output_path)
+        if file_size > MAX_FILE_SIZE:
+            os.remove(output_path)
+            await message.reply_text(f"❌ حجم الفيديو كبير جداً ({file_size / (1024*1024):.2f} ميجابايت) ولا يمكن تحميله.")
+            return
+
         await message.reply_video(video=open(output_path, 'rb'))
 
-        # زر رجوع بعد التحميل
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 رجوع لاختيار جودة أخرى", callback_data="back_to_quality_selection")]
+            [InlineKeyboardButton("🔙 رجوع لاختيار جودة أخرى", callback_data="download_video_menu")]
         ])
         await message.reply_text("يمكنك اختيار تحميل آخر:", reply_markup=keyboard)
 
@@ -278,11 +268,18 @@ async def download_mp3(message, url: str):
             ydl.download([url])
 
         mp3_path = output_path + ".mp3"
-        if os.path.exists(mp3_path):
-            await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
-            os.remove(mp3_path)
-        else:
+        if not os.path.exists(mp3_path):
             await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد التحويل.")
+            return
+
+        file_size = os.path.getsize(mp3_path)
+        if file_size > MAX_FILE_SIZE:
+            os.remove(mp3_path)
+            await message.reply_text(f"❌ حجم ملف الصوت كبير جداً ({file_size / (1024*1024):.2f} ميجابايت) ولا يمكن تحميله.")
+            return
+
+        await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
+        os.remove(mp3_path)
 
     except Exception as e:
         await message.reply_text(f"❌ فشل تحميل الصوت:\n{e}")
