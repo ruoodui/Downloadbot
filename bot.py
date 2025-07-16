@@ -141,61 +141,101 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def download_video(message, url, quality, context):
     try:
-        filename = f"{uuid.uuid4()}.mp4"
-        output = os.path.join(DOWNLOAD_FOLDER, filename)
+        filename = str(uuid.uuid4())
+        output_path = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
-        ydl_opts = {
-            'format': quality,
-            'outtmpl': output,
-            'quiet': True,
-            'nocheckcertificate': True,
-            'cookiefile': cookie_file,
-            'http_headers': {'User-Agent': 'Mozilla/5.0'}
-        }
+        def get_ydl_opts(q):
+            return {
+                'format': q,
+                'outtmpl': output_path + ".%(ext)s",
+                'quiet': True,
+                'nocheckcertificate': True,
+                'cookiefile': cookie_file,
+                'http_headers': {'User-Agent': 'Mozilla/5.0'}
+            }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        # محاولة التحميل بجودة عالية
+        with yt_dlp.YoutubeDL(get_ydl_opts("best")) as ydl:
+            info = ydl.extract_info(url, download=True)
+            ext = info.get("ext", "mp4")
+            downloaded_file = output_path + f".{ext}"
 
-        await message.reply_video(video=open(output, 'rb'))
+        if os.path.getsize(downloaded_file) > 50 * 1024 * 1024:
+            os.remove(downloaded_file)
+            await message.reply_text("⚠️ الحجم كبير، سيتم التحميل بجودة أقل...")
+
+            with yt_dlp.YoutubeDL(get_ydl_opts("worst")) as ydl:
+                info = ydl.extract_info(url, download=True)
+                ext = info.get("ext", "mp4")
+                downloaded_file = output_path + f".{ext}"
+
+        if not os.path.exists(downloaded_file):
+            await message.reply_text("❌ لم يتم العثور على الملف بعد التحميل.")
+            return
+
+        if os.path.getsize(downloaded_file) > 50 * 1024 * 1024:
+            await message.reply_text("❌ حتى بعد تقليل الجودة، الملف أكبر من 50MB.")
+            os.remove(downloaded_file)
+            return
+
+        await message.reply_video(video=open(downloaded_file, 'rb'))
         await asyncio.sleep(5)
         await message.delete()
-        os.remove(output)
+        os.remove(downloaded_file)
 
     except Exception as e:
-        await message.reply_text(f"❌ خطأ في تحميل الفيديو:\n{e}")
+        await message.reply_text(f"❌ حدث خطأ أثناء تحميل الفيديو:\n{e}")
 
 async def download_mp3(message, url, quality, context):
     try:
-        filename = f"{uuid.uuid4()}"
-        output = os.path.join(DOWNLOAD_FOLDER, filename)
+        filename = str(uuid.uuid4())
+        output_path = os.path.join(DOWNLOAD_FOLDER, filename)
         cookie_file = get_cookie_file_for_url(url)
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': output,
-            'quiet': True,
-            'nocheckcertificate': True,
-            'cookiefile': cookie_file,
-            'http_headers': {'User-Agent': 'Mozilla/5.0'},
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': quality
-            }]
-        }
+        def get_ydl_opts(q):
+            return {
+                'format': 'bestaudio/best',
+                'outtmpl': output_path + ".%(ext)s",
+                'quiet': True,
+                'nocheckcertificate': True,
+                'cookiefile': cookie_file,
+                'http_headers': {'User-Agent': 'Mozilla/5.0'},
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': q
+                }]
+            }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        with yt_dlp.YoutubeDL(get_ydl_opts("192")) as ydl:
+            ydl.extract_info(url, download=True)
+            mp3_file = output_path + ".mp3"
 
-        mp3_path = output + ".mp3"
-        await message.reply_document(document=open(mp3_path, 'rb'), filename="audio.mp3")
+        if os.path.getsize(mp3_file) > 50 * 1024 * 1024:
+            os.remove(mp3_file)
+            await message.reply_text("⚠️ الملف كبير، سيتم التحويل إلى جودة أقل...")
+
+            with yt_dlp.YoutubeDL(get_ydl_opts("64")) as ydl:
+                ydl.extract_info(url, download=True)
+                mp3_file = output_path + ".mp3"
+
+        if not os.path.exists(mp3_file):
+            await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد التحويل.")
+            return
+
+        if os.path.getsize(mp3_file) > 50 * 1024 * 1024:
+            await message.reply_text("❌ حتى بعد تقليل الجودة، الملف الصوتي أكبر من 50MB.")
+            os.remove(mp3_file)
+            return
+
+        await message.reply_document(document=open(mp3_file, 'rb'), filename="audio.mp3")
         await asyncio.sleep(5)
         await message.delete()
-        os.remove(mp3_path)
+        os.remove(mp3_file)
 
     except Exception as e:
-        await message.reply_text(f"❌ خطأ في تحميل الصوت:\n{e}")
+        await message.reply_text(f"❌ حدث خطأ أثناء تحميل الصوت:\n{e}")
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
