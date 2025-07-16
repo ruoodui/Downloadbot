@@ -155,23 +155,26 @@ async def download_video(message, url, quality, context):
                 'http_headers': {'User-Agent': 'Mozilla/5.0'}
             }
 
-        # محاولة التحميل بجودة عالية
+        # محاولة أولى بجودة عالية
         with yt_dlp.YoutubeDL(get_ydl_opts("best")) as ydl:
             info = ydl.extract_info(url, download=True)
-            ext = info.get("ext", "mp4")
-            downloaded_file = output_path + f".{ext}"
+            downloaded_file = ydl.prepare_filename(info)
 
+        if not os.path.exists(downloaded_file):
+            await message.reply_text("❌ لم يتم العثور على الملف بعد التحميل.")
+            return
+
+        # إذا الحجم كبير، نعيد التحميل بجودة أقل
         if os.path.getsize(downloaded_file) > 50 * 1024 * 1024:
             os.remove(downloaded_file)
             await message.reply_text("⚠️ الحجم كبير، سيتم التحميل بجودة أقل...")
 
             with yt_dlp.YoutubeDL(get_ydl_opts("worst")) as ydl:
                 info = ydl.extract_info(url, download=True)
-                ext = info.get("ext", "mp4")
-                downloaded_file = output_path + f".{ext}"
+                downloaded_file = ydl.prepare_filename(info)
 
         if not os.path.exists(downloaded_file):
-            await message.reply_text("❌ لم يتم العثور على الملف بعد التحميل.")
+            await message.reply_text("❌ لم يتم العثور على الملف بعد المحاولة الثانية.")
             return
 
         if os.path.getsize(downloaded_file) > 50 * 1024 * 1024:
@@ -208,20 +211,26 @@ async def download_mp3(message, url, quality, context):
                 }]
             }
 
+        # محاولة التحميل بجودة عالية
         with yt_dlp.YoutubeDL(get_ydl_opts("192")) as ydl:
-            ydl.extract_info(url, download=True)
-            mp3_file = output_path + ".mp3"
+            info = ydl.extract_info(url, download=True)
+            mp3_file = ydl.prepare_filename(info).replace('.webm', '.mp3').replace('.m4a', '.mp3')
 
+        if not os.path.exists(mp3_file):
+            await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد التحويل.")
+            return
+
+        # إذا الحجم كبير، نعيد التحميل بجودة أقل
         if os.path.getsize(mp3_file) > 50 * 1024 * 1024:
             os.remove(mp3_file)
             await message.reply_text("⚠️ الملف كبير، سيتم التحويل إلى جودة أقل...")
 
             with yt_dlp.YoutubeDL(get_ydl_opts("64")) as ydl:
-                ydl.extract_info(url, download=True)
-                mp3_file = output_path + ".mp3"
+                info = ydl.extract_info(url, download=True)
+                mp3_file = ydl.prepare_filename(info).replace('.webm', '.mp3').replace('.m4a', '.mp3')
 
         if not os.path.exists(mp3_file):
-            await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد التحويل.")
+            await message.reply_text("❌ لم يتم العثور على ملف الصوت بعد المحاولة الثانية.")
             return
 
         if os.path.getsize(mp3_file) > 50 * 1024 * 1024:
