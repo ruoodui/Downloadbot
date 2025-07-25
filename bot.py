@@ -3,12 +3,15 @@ import uuid
 import asyncio
 import nest_asyncio
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+)
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
 import yt_dlp
+import csv
 
 nest_asyncio.apply()
 load_dotenv()
@@ -27,11 +30,10 @@ def save_cookie_file(filename, env_key):
         with open(filename, "w", encoding="utf-8") as f:
             f.write(content)
 
-# حفظ ملفات الكوكيز من المتغيرات البيئية
 save_cookie_file("cookies_yt.txt", "YT_COOKIES")
 save_cookie_file("cookies_ig.txt", "IG_COOKIES")
 save_cookie_file("cookies_tt.txt", "TT_COOKIES")
-save_cookie_file("cookies_fb.txt", "FB_COOKIES")  # دعم فيسبوك
+save_cookie_file("cookies_fb.txt", "FB_COOKIES")
 
 def get_cookie_file_for_url(url: str) -> str:
     if "facebook.com" in url or "fb.watch" in url:
@@ -244,15 +246,35 @@ async def download_mp3(message, url, quality, context):
     except Exception as e:
         await message.reply_text(f"❌ حدث خطأ أثناء تحميل الصوت:\n{e}")
 
+# ✅ /stats: فقط عدد المستخدمين + زر تصدير CSV
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرف فقط.")
         return
-    users = "\n".join([f"• `{u}`" for u in user_ids]) or "لا يوجد."
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📥 تحميل المستخدمين CSV", callback_data="export_users_csv")]
+    ])
+
     await update.message.reply_text(
-        f"📊 إحصائيات:\n👤 المستخدمين: {len(user_ids)}\n📥 الطلبات: {request_count}\n\n{users}",
-        parse_mode="Markdown"
+        f"📊 الإحصائيات:\n\n👤 عدد المستخدمين: {len(user_ids)}",
+        reply_markup=keyboard
     )
+
+# ✅ تصدير ملف CSV عند الضغط
+async def export_users_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    filename = os.path.join(DOWNLOAD_FOLDER, "users.csv")
+    with open(filename, "w", newline='', encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["User ID"])
+        for uid in user_ids:
+            writer.writerow([uid])
+
+    await query.message.reply_document(document=InputFile(filename), filename="users.csv")
+    os.remove(filename)
 
 async def download_mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -266,6 +288,7 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("mp3", download_mp3_command))
+    app.add_handler(CallbackQueryHandler(export_users_csv, pattern="^export_users_csv$"))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     await app.run_polling()
